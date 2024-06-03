@@ -17,7 +17,6 @@ while getopts "a:" opt; do
 done
 
 reset_ip_tables () {
-
   # start iptables service if not started
   if service iptables status | grep -q dead; then
     service iptables start
@@ -58,16 +57,16 @@ auto_sniffer () {
   echo -e "${RED}Press any key to stop sniffing. DO NOT CTRL C${NC}"
   sleep 1
 
-  #sniff the ids based on platform
-  if [ "$1" == "psn" ]; then
+  # sniff the ids based on platform
+  # if [ "$1" == "psn" ]; then
     ngrep -l -q -W byline -d $INTERFACE "psn-4" udp | grep --line-buffered -o -P 'psn-4[0]{8}\K[A-F0-9]{7}' | tee -a "$2" &
-  elif [ "$1" == "xbox" ]; then
+  # elif [ "$1" == "xbox" ]; then
     ngrep -l -q -W byline -d $INTERFACE "xboxpwid:" udp | grep --line-buffered -o -P 'xboxpwid:\K[A-F0-9]{32}' | tee -a "$2" &
-  elif [ "$1" == "steam" ]; then
+  # elif [ "$1" == "steam" ]; then
     ngrep -l -q -W byline -d $INTERFACE "steamid:" udp | grep --line-buffered -o -P 'steamid:\K[0-9]{17}' | tee -a "$2" &
-  fi
+  # fi
 
-  #run infinitely until key is pressed
+  # run infinitely until key is pressed
   while [ true ] ; do
     read -t 1 -n 1
     if [ $? = 0 ] ; then
@@ -78,7 +77,6 @@ auto_sniffer () {
 }
 
 install_dependencies () {
-
   # enable ip forwarding
   sysctl -w net.ipv4.ip_forward=1 > /dev/null
 
@@ -154,242 +152,27 @@ install_dependencies () {
     echo -e "Be sure to import this config to your router and connect your consoles before proceeding any further.${NC}"
 
     # stop nginx web service after 15 minutes and delete openvpn config
-    nohup bash -c 'sleep 900 && service nginx stop && apt remove nginx -y && rm /var/www/html/client.ovpn' &>/dev/null &
-  else
-    DEBIAN_FRONTEND=noninteractive apt-get -y -q install iptables iptables-persistent ngrep > /dev/null
+    nohup bash -c 'sleep 900 && service nginx stop && rm -f /var/www/html/client.ovpn' > /dev/null 2>&1 &
   fi
-  
 }
 
-setup () {
+if [ "$action" == "install" ]; then
+  install_dependencies
 
-  if [ -z "$1" ]; then
-    echo -e "${GREEN}Setting up firewall rules.${NC}"
-  fi
-  
+elif [ "$action" == "reset" ]; then
   reset_ip_tables
+  echo -e "${GREEN}IP tables reset complete.${NC}"
 
-  read -p "Enter your platform xbox, psn, steam: " platform
-  platform=$(echo "$platform" | xargs)
-  platform=${platform:-"psn"}
-
-  reject_str=$(get_platform_match_str "$platform")
-  echo "$platform" > /tmp/data.txt
-
-  read -p "Enter your network/netmask: " net
-  net=$(echo "$net" | xargs)
-  net=${net:-$DEFAULT_NET}
-  echo "$net" >> /tmp/data.txt
-
-  ids=()
-  read -p "Would you like to sniff the ID automatically?(psn/xbox/steam) y/n: " yn
-  yn=${yn:-"y"}
-  if ! [[ $platform =~ ^(psn|xbox|steam)$ ]]; then
-    yn="n"
-  fi
-  echo "n" >> /tmp/data.txt
-
-  #auto sniffer
-  if [[ $yn =~ ^(y|yes)$ ]]; then
-    echo -e "${RED}Please have the fireteam leaders join each other in orbit.${NC}"
-
-    auto_sniffer "$platform" "/tmp/data.txt"
-
-    #remove duplicates
-    awk '!a[$0]++' /tmp/data.txt > /tmp/temp.txt && mv /tmp/temp.txt /tmp/data.txt
-
-    #get number of accounts
-    snum=$(tail -n +4 /tmp/data.txt | wc -l)
-    awk "NR==4{print $snum}1" /tmp/data.txt > /tmp/temp.txt && mv /tmp/temp.txt /tmp/data.txt
-
-    #get ids and add to ads array with identifier
-    tmp_ids=$(tail -n +5 /tmp/data.txt)
-    c=1
-    while IFS= read -r line; do 
-      idf="system$c"
-      ids+=( "$idf;$line" )
-      ((c++))
-    done <<< "$tmp_ids"
-  else 
-    #add ids manually
-
-    if [ -z "$1" ]; then
-      echo -e "${RED}Please add the 2 fireteam leaders first.${NC}"
-    fi
-
-    read -p "How many account IDs do you want to add? " snum
-    if [ $snum -lt 1 ]; then
-      exit 1;
-    fi;
-    echo $snum >> /tmp/data.txt
-    for ((i = 0; i < snum; i++))
-    do 
-      num=$(( $i + 1 ))
-      if [ $num -lt 3 ]; then
-        who="Fireteam Leader"
-      else
-        who="Player"
-      fi
-      idf="system$num"
-      read -p "Enter the sniffed Account ID for $who $num: " sid
-      sid=$(echo "$sid" | xargs)
-      echo $sid >> /tmp/data.txt
-      ids+=( "$idf;$sid" )
-    done
-  fi;
-
-  mv /tmp/data.txt ./data.txt
-
-  iptables -I FORWARD -p udp --dport 27000:27200 -m string --string "$reject_str" --algo bm -j REJECT
-  
-  n=${#ids[*]}
-  INDEX=1
-  for (( i = n-1; i >= 0; i-- ))
-  do
-    elem=${ids[i]}
-    IFS=';' read -r -a id <<< "$elem"
-    offset=$((n - 2))
-    if [ $INDEX -gt $offset ]; then
-      iptables -N "${id[0]}"
-      iptables -I FORWARD -s "$net" -p udp --dport 27000:27200 -m string --string "${id[1]}" --algo bm -j "${id[0]}"
-    else
-      iptables -I FORWARD -s "$net" -p udp --dport 27000:27200 -m string --string "${id[1]}" --algo bm -j ACCEPT
-    fi
-    ((INDEX++))
-  done
-  
-  INDEX1=1
-  for i in "${ids[@]}"
-  do
-    if [ $INDEX1 -gt 2 ]; then
-      break
-    fi
-    IFS=';' read -r -a id <<< "$i"
-    INDEX2=1
-    for j in "${ids[@]}"
-    do
-      if [ $INDEX2 -gt 2 ]; then
-        break
-      fi
-      if [ "$i" != "$j" ]; then
-        IFS=';' read -r -a idx <<< "$j"
-        iptables -A "${id[0]}" -s "$net" -p udp --dport 27000:27200 -m string --string "${idx[1]}" --algo bm -j ACCEPT
-      fi
-      ((INDEX2++))
-    done
-    ((INDEX1++))
-  done
-
-  if [ -z "$1" ]; then
-    echo -e "${GREEN}Setup is complete and Matchmaking Firewall is now active.${NC}"
-  fi
-}
-
-add () {
-  read -p "Enter the sniffed ID: " id
-  id=$(echo "$id" | xargs)
-  if [ -n "$id" ]; then
-    echo "$id" >> data.txt
-    n=$(sed -n '4p' < data.txt)
-    ((n++))
-    sed -i "4c$n" data.txt
-    read -p "Would you like to enter another ID? y/n " yn
-    yn=${yn:-"y"}
-    if [[ $yn =~ ^(y|yes)$ ]]; then
-      add
-    else
-      setup true < data.txt
-    fi
-  fi
-}
-
-open () {
-  if iptables-save | grep -q "REJECT"; then
-    echo -e "${RED}Matchmaking is no longer being restricted.${NC}"
-    platform=$(sed -n '1p' < data.txt)
-    reject_str=$(get_platform_match_str "$platform")
-    iptables -D FORWARD -p udp --dport 27000:27200 -m string --string "$reject_str" --algo bm -j REJECT
-  fi
-}
-
-close () {
-  if ! iptables-save | grep -q "REJECT"; then
-    echo -e "${RED}Matchmaking is now being restricted.${NC}"
-    platform=$(sed -n '1p' < data.txt)
-    reject_str=$(get_platform_match_str "$platform")
-    pos=$(iptables -L FORWARD | grep -c "system")
-    ((pos++))
-    iptables -I FORWARD $pos -p udp --dport 27000:27200 -m string --string "$reject_str" --algo bm -j REJECT
-  fi
-}
-
-if [ "$action" == "setup" ]; then
-  if ! command -v ngrep &> /dev/null
-  then
-      install_dependencies
-  fi
-  setup
-elif [ "$action" == "stop" ]; then
-  echo "This command is depreciated. Please run: sudo bash d2firewall.sh -a open"
-  open
-elif [ "$action" == "start" ]; then
-  echo "This command is depreciated. Please run: sudo bash d2firewall.sh -a close"
-  close
-elif [ "$action" == "open" ]; then
-  open
-elif [ "$action" == "close" ]; then
-  close
-elif [ "$action" == "add" ]; then
-  add
-elif [ "$action" == "remove" ]; then
-  # display list of ids to user
-  list=$(tail -n +5 data.txt | cat -n)
-  echo "$list"
-  total=$(echo "$list" | wc -l)
-  read -p "How many IDs do you want to remove from the end of this list? " num
-  if [[ $num -gt 0 && $num -le $total ]]; then
-    head -n -"$num" data.txt > /tmp/data.txt && mv /tmp/data.txt ./data.txt
-    n=$(sed -n '4p' < data.txt)
-    n=$((n-num))
-    sed -i "4c$n" data.txt
-    setup true < data.txt
-  fi;
 elif [ "$action" == "sniff" ]; then
-  platform=$(sed -n '1p' < data.txt)
-  if ! [[ $platform =~ ^(psn|xbox|steam)$ ]]; then
-      echo "Only psn,xbox, and steam are supported atm."
-    exit 1
-  fi
-  open
+  reset_ip_tables
+  auto_sniffer "$2" "$3"
+  echo -e "${GREEN}IP sniffing complete.${NC}"
 
-  #auto sniff
-  echo -e "${RED}Please have the players join on the fireteam leaders in orbit.${NC}"
-  
-  auto_sniffer "$platform" "data.txt"
-
-  #remove duplicates
-  awk '!a[$0]++' data.txt > /tmp/data.txt && mv /tmp/data.txt ./data.txt
-
-  #update total number of ids
-  n=$(tail -n +5 data.txt | wc -l)
-  sed -i "4c$n" data.txt
-
-  setup true < data.txt
-
-elif [ "$action" == "list" ]; then
-  # list the ids added to the data.txt file
-  tail -n +5 data.txt | cat -n
 elif [ "$action" == "update" ]; then
-  wget -q https://raw.githubusercontent.com/cloudex99/Destiny-2-Matchmaking-Firewall/main/d2firewall.sh -O ./d2firewall.sh
+  wget -q https://raw.githubusercontent.com/lai926/d2FW/6b70988004007d8daae8096b63d755520e93684b/d2firewall.sh -O ./d2firewall.sh
   chmod +x ./d2firewall.sh
   echo -e "${GREEN}Script update complete."
   echo -e "Please rerun the initial setup to avoid any issues.${NC}"
-elif [ "$action" == "load" ]; then
-  echo -e "${GREEN}Loading firewall rules.${NC}"
-  if [ -f ./data.txt ]; then
-      setup true < ./data.txt
-  fi
-elif [ "$action" == "reset" ]; then
-  echo -e "${RED}Erasing all firewall rules.${NC}"
-  reset_ip_tables
+else
+  echo -e "${RED}Not a valid action. Use 'install', 'reset', 'sniff', or 'update'.${NC}"
 fi
