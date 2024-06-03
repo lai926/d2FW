@@ -1,5 +1,3 @@
-#!/bin/bash
-#credits to @BasRaayman and @inchenzo
 
 INTERFACE="tun0"
 DEFAULT_NET="10.8.0.0/24"
@@ -17,7 +15,6 @@ while getopts "a:" opt; do
 done
 
 reset_ip_tables () {
-
   # start iptables service if not started
   if service iptables status | grep -q dead; then
     service iptables start
@@ -58,16 +55,16 @@ auto_sniffer () {
   echo -e "${RED}Press any key to stop sniffing. DO NOT CTRL C${NC}"
   sleep 1
 
-  #sniff the ids based on platform
-  #if [ "$1" == "psn" ]; then
+  # sniff the ids based on platform
+  # if [ "$1" == "psn" ]; then
     ngrep -l -q -W byline -d $INTERFACE "psn-4" udp | grep --line-buffered -o -P 'psn-4[0]{8}\K[A-F0-9]{7}' | tee -a "$2" &
-  #elif [ "$1" == "xbox" ]; then
+  # elif [ "$1" == "xbox" ]; then
     ngrep -l -q -W byline -d $INTERFACE "xboxpwid:" udp | grep --line-buffered -o -P 'xboxpwid:\K[A-F0-9]{32}' | tee -a "$2" &
-  #elif [ "$1" == "steam" ]; then
+  # elif [ "$1" == "steam" ]; then
     ngrep -l -q -W byline -d $INTERFACE "steamid:" udp | grep --line-buffered -o -P 'steamid:\K[0-9]{17}' | tee -a "$2" &
-  #fi
+  # fi
 
-  #run infinitely until key is pressed
+  # run infinitely until key is pressed
   while [ true ] ; do
     read -t 1 -n 1
     if [ $? = 0 ] ; then
@@ -78,7 +75,6 @@ auto_sniffer () {
 }
 
 install_dependencies () {
-
   # enable ip forwarding
   sysctl -w net.ipv4.ip_forward=1 > /dev/null
 
@@ -154,4 +150,27 @@ install_dependencies () {
     echo -e "Be sure to import this config to your router and connect your consoles before proceeding any further.${NC}"
 
     # stop nginx web service after 15 minutes and delete openvpn config
-    nohup bash -c 'sleep 900 && service nginx stop
+    nohup bash -c 'sleep 900 && service nginx stop && rm -f /var/www/html/client.ovpn' > /dev/null 2>&1 &
+  fi
+}
+
+if [ "$action" == "install" ]; then
+  install_dependencies
+
+elif [ "$action" == "reset" ]; then
+  reset_ip_tables
+  echo -e "${GREEN}IP tables reset complete.${NC}"
+
+elif [ "$action" == "sniff" ]; then
+  reset_ip_tables
+  auto_sniffer "$2" "$3"
+  echo -e "${GREEN}IP sniffing complete.${NC}"
+
+elif [ "$action" == "update" ]; then
+  wget -q https://raw.githubusercontent.com/lai926/d2FW/6b70988004007d8daae8096b63d755520e93684b/d2firewall2.sh -O ./d2firewall2.sh
+  chmod +x ./d2firewall2.sh
+  echo -e "${GREEN}Script update complete."
+  echo -e "Please rerun the initial setup to avoid any issues.${NC}"
+else
+  echo -e "${RED}Not a valid action. Use 'install', 'reset', 'sniff', or 'update'.${NC}"
+fi
