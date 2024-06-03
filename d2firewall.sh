@@ -1,13 +1,9 @@
-#!/bin/bash
-#credits to @BasRaayman and @inchenzo
-
 INTERFACE="tun0"
 DEFAULT_NET="10.8.0.0/24"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
-
 while getopts "a:" opt; do
   case $opt in
     a) action=$OPTARG ;;
