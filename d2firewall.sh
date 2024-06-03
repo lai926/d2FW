@@ -169,7 +169,7 @@ elif [ "$action" == "sniff" ]; then
   echo -e "${GREEN}IP sniffing complete.${NC}"
 
 elif [ "$action" == "update" ]; then
-  wget -q https://raw.githubusercontent.com/lai926/d2FW/6b70988004007d8daae8096b63d755520e93684b/d2firewall.sh -O ./d2firewall.sh
+  wget -q https://github.com/lai926/d2FW/blob/main/d2firewall.sh -O ./d2firewall.sh
   chmod +x ./d2firewall.sh
   echo -e "${GREEN}Script update complete."
   echo -e "Please rerun the initial setup to avoid any issues.${NC}"
